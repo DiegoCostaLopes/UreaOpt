@@ -1,1 +1,5 @@
-/.venv
+.venv/
+.ipynb_checkpoints/
+
+# adding the distance matrix to the gitignore for size reasons
+data/raw/matriz_distancias.csv
