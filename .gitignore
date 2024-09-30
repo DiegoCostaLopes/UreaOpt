@@ -2,6 +2,7 @@
 .ipynb_checkpoints/
 
 # adding the distance matrix to the gitignore for size reasons
-data/raw/matriz_distancias.csv
+data/raw/distance_matrix/matriz_distancias.csv
+data/processed/distance_matrix.csv
 
 .~lock*
