@@ -6,7 +6,7 @@ import os
 # https://www.dropbox.com/scl/fo/zseuu3bmzsc9rj8ycpujd/AC9e1MUg0LpXaakjgsen3Do?rlkey=pz8htz0nlzdcd5q01n143k2en&e=1&dl=0
 
 def main():
-    df = pd.read_csv("matriz_distancias.csv")
+    df = pd.read_csv("data/raw/distance_matrix/matriz_distancias.csv")
     df = df[["origem", "destino", "distancia", "tempo"]]
 
     con = sqlite3.connect("matriz_distancias.db")

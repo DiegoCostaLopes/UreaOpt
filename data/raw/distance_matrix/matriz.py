@@ -14,7 +14,7 @@ continuamos com 5570 códigos distintos.
 """
 
 def validar_codigos_ibge(lista_codigos_ibge):
-    with open("municipios.json", "r", encoding="utf-8") as f:
+    with open("data/raw/distance_matrix/municipios.json", "r", encoding="utf-8") as f:
         municipios = json.load(f)
 
     codigos_existentes = [mun["id"] for mun in municipios]
@@ -92,7 +92,7 @@ def corrigir_codigo_ibge(cod_ibge:int, codigos_existentes:list):
 def obter_matriz(lista_codigos_ibge):
     df = obter_df(lista_codigos_ibge)
 
-    with open("municipios.json", "r", encoding="utf-8") as f:
+    with open("data/raw/distance_matrix/municipios.json", "r", encoding="utf-8") as f:
         municipios = json.load(f)
 
     codigos_existentes = [mun["id"] for mun in municipios]
