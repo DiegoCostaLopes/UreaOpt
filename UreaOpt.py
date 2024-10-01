@@ -261,7 +261,8 @@ biomass_sold = pd.DataFrame(
 urea_sold = pd.Series(
     {i: j for i, j in zip(m.LOCATION, [m.urea_sold[L, l2]() for l2 in m.LOCATION])}
 )
-
+#%%
 biomass_used.to_pickle('data/results/biomass_used.p')
 biomass_sold.to_pickle('data/results/biomass_sold.p')
 urea_sold.to_pickle('data/results/urea_sold.p')
+# %%
