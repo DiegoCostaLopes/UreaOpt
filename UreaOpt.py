@@ -315,7 +315,7 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
 
 
     # model solving
-    solver = pyo.SolverFactory('appsi_highs')
+    solver = pyo.SolverFactory('gurobi')
     solver.solve(m)
 
 
