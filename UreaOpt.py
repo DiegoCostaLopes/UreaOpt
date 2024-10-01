@@ -1,16 +1,25 @@
 import pyomo.environ as pyo
 import pandas as pd
 import numpy as np
+import time
 
+
+start_time = time.time()
 # data organization
 
-data = pd.read_pickle('data/processed/location_db.p')
+sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
+sources_cost = [source + '_cost' for source in sources] 
+# full db has more data on area planted and etc. that the algorithm and
+#  the results dont necessarily need.
+columns = ['name', 'location_type', 'state', 'location_id', 'urea_demand', 'urea_price'] + sources + sources_cost
+
+data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
+# choosing which subset of data will I study.
 data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
-
 locations = list(data.index)
-sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
+distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
 routes = ['Pure oxygen gasification',
           'Air mixed gasification',
@@ -21,9 +30,6 @@ conversion_data = {'source': sources,
         'Air mixed gasification': [0.81 for source in sources],
         'Electrolysis': [0.00 for source in sources]}
 conversion = pd.DataFrame(conversion_data).set_index('source')
-
-
-distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
 def solve_model(data, sources, routes, conversion, distance):
 
@@ -251,18 +257,35 @@ plant_installed = pd.Series(
 
 L = plant_installed.index[plant_installed >= 0.999].to_list()
 
-biomass_used = pd.DataFrame(
-    {r:      {b: k for b, k in zip(m.SOURCE, [m.biomass_used[b, r, L]() for b in m.SOURCE])} for r in m.ROUTE}
-)
-biomass_sold = pd.DataFrame(
-    {l1:     {b: k for b, k in zip(m.SOURCE, [m.biomass_sold[b, l1, L]() for b in m.SOURCE])} for l1 in m.LOCATION}
-)
 
-urea_sold = pd.Series(
-    {i: j for i, j in zip(m.LOCATION, [m.urea_sold[L, l2]() for l2 in m.LOCATION])}
-)
+plant_installed = pd.Series([m.plant_installed[l1]() for l1 in m.LOCATION],
+                             name='plant_installed', index=locations)
+biomass_used = pd.DataFrame([[m.biomass_used[b, r, L]() for b in m.SOURCE] for r in m.ROUTE],
+                            index=routes, columns=sources)
+biomass_sold = pd.DataFrame([[m.biomass_sold[b, l1, L]() for b in m.SOURCE] for l1 in m.LOCATION],
+                            index=locations, columns=[source+'_used' for source in sources])
+
+
+urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_sold', index=locations)
 #%%
+data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
+
+# biomass_used = pd.DataFrame(
+#     {r:      {b: k for b, k in zip(m.SOURCE, [m.biomass_used[b, r, L]() for b in m.SOURCE])} for r in m.ROUTE}
+# )
+# biomass_sold = pd.DataFrame(
+#     {l1:     {b: k for b, k in zip(m.SOURCE, [m.biomass_sold[b, l1, L]() for b in m.SOURCE])} for l1 in m.LOCATION}
+# )
+
+# urea_sold = pd.Series(
+#     {i: j for i, j in zip(m.LOCATION, [m.urea_sold[L, l2]() for l2 in m.LOCATION])}
+# )
+
+data.to_pickle('data/results/main_results.p')
 biomass_used.to_pickle('data/results/biomass_used.p')
-biomass_sold.to_pickle('data/results/biomass_sold.p')
-urea_sold.to_pickle('data/results/urea_sold.p')
+
+end_time = time.time()
+duration = (end_time - start_time) / 60
+print(f'Run complete! Time to solve: {duration} mins')
+
 # %%
