@@ -4,124 +4,37 @@ import numpy as np
 
 # data organization
 
-df = pd.read_csv('data/processed/location_db.csv').set_index('id')
-df.index = df.index.astype(int)
-df = df.loc[(df['location_type'] == 'city') & (df['state'] == 'Sao Paulo')]
+data = pd.read_pickle('data/processed/location_db.p')
+distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
-locations = list(df.index)
-crops = ['cocoa', 'coffee', 'corn', 'rice', 'soy', 'sugarcane']
+data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
 
-supply = df[crops].T
-demand = df['urea_consumption'].T
+locations = list(data.index)
+sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
+
 routes = ['Pure oxygen gasification',
           'Air mixed gasification',
           'Electrolysis']
 
-data = {'source': crops,
-        'Pure oxygen gasification': [0.81 for source in crops],
-        'Air mixed gasification': [0.81 for source in crops],
-        'Electrolysis': [0.00 for source in crops]}
-conversion = pd.DataFrame(data).set_index('source')
-
-cost = pd.DataFrame(index=crops, columns=locations)
-
-for location in locations:
-    cost[location] = 80
-
-urea_price = pd.Series(index=locations)
-urea_price = pd.Series([310 for location in locations], index=locations)
-
-distance_matrix = pd.read_csv('data/processed/distance_matrix.csv').set_index('origin')
-distance_matrix.index = distance_matrix.index.astype(int)
-distance_matrix.columns = distance_matrix.columns.astype(int)
-
-distance_matrix = distance_matrix.loc[locations, locations]
-print('bla')
-
-#%%
-
-# locations = ['SP',  # tons of bagasse, eucalyptus
-#              'MS',  # corn and soy residue, proximity to consumers
-#              'NE',  # significant bagasse availability, dedicated wind
-#              'RS',  # high availability of rice husks at cheap prices
-#              'Intl.',  # fertilizer export or biomass import
-#              ]
-
-# biomasses = ['Bagasse',
-#              'Sugarcane straw',
-#              'Corn stover',
-
-#              'Soybean straw',
-#              'Eucalyptus chips',
-#              'Eucalyptus bark',
-#              'Rice husks', ]
-
-# power_sources = ['Solar',
-#                  'Wind',
-#                  'Grid', ]
-# energy_sources = biomasses + power_sources
+conversion_data = {'source': sources,
+        'Pure oxygen gasification': [0.81 for source in sources],
+        'Air mixed gasification': [0.81 for source in sources],
+        'Electrolysis': [0.00 for source in sources]}
+conversion = pd.DataFrame(conversion_data).set_index('source')
 
 
-# supply = pd.DataFrame({
-#     'source': biomasses,
-#     'SP': [200000, 100000, 40000, 50000, 100000, 100000, 1000],
-#     'MS': [50000, 50000, 200000, 200000, 10000, 10000, 0],
-#     'NE': [300000, 300000, 1000, 30000, 40000, 40000, 0],
-#     'RS': [10000, 10000, 10000, 1000, 500000, 500000, 500000],
-#     'Intl.': [999999, 999999, 999999, 999999, 999999, 999999, 999999],
-# }).set_index('source')
+distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
-# demand = pd.Series({
-#     'SP': 200000,
-#     'MS': 250000,
-#     'NE': 180000,
-#     'RS': 150000,
-#     'Intl.': 999999,
-# })
-
-# routes = ['Pure oxygen gasification',
-#           'Air mixed gasification',
-#           'Electrolysis']
-
-# data = {'source': energy_sources,
-#         'Pure oxygen gasification': [0.81, 0.83, 0.79, 0.75, 0.78, 0.84, 0.80, 0.0, 0.0, 0.0],
-#         'Air mixed gasification': [0.81, 0.83, 0.79, 0.75, 0.78, 0.84, 0.80, 0.0, 0.0, 0.0],
-#         'Electrolysis': [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 1.2, 1.5, 1.2]}
-# conversion = pd.DataFrame(data).set_index('source')  # conversion, in t urea / t biomass (or MWh of electrical power)
-
-# utilities_power = {'source': energy_sources,
-#                    'Pure oxygen gasification': []}
-
-# cost = pd.DataFrame({
-#     'source': energy_sources,
-#     'SP': [50, 50.0, 75, 80, 110, 90, 60, 210, 215, 260],
-#     'MS': [65.0, 55, 70, 75, 125, 98, 80, 230, 245, 280],
-#     'NE': [80, 80, 90, 85, 125, 95, 75, 195, 200, 230],
-#     'RS': [90, 80, 80, 80, 110, 90, 55, 260, 250, 250],
-#     'Intl.': [100, 95, 90, 90, 150, 120, 90, 300, 300, 300],
-# }).set_index('source')
-
-# urea_price = pd.Series({
-#     'SP': 310,
-#     'MS': 315,
-#     'NE': 320,
-#     'RS': 310,  
-#     'Intl.': 305,
-# })
-
-# distance = pd.DataFrame({
-#     'locations': locations,
-#     'SP': [100, 1500, 2000, 1000, 200],
-#     'MS': [1500, 100, 2500, 2500, 1500],
-#     'NE': [2000, 2500, 100, 4000, 200],
-#     'RS': [1000, 2500, 4000, 100, 200],
-#     'Intl.': [200, 1500, 200, 200, 0],
-# }).set_index('locations')
-
-
-def solve_model(locations, sources, routes, supply, demand, conversion, cost, urea_price, distance):
+def solve_model(data, sources, routes, conversion, distance):
 
     capex_ranges = [1, 2, 3, 4]
+
+    locations = list(data.index)
+    supply = data[sources]
+    demand = data['urea_demand']
+    urea_price = data['urea_price']
+    cost = data[[source+'_cost' for source in sources]]
+    cost.columns = sources
 
     # model definition
     m = pyo.ConcreteModel()
@@ -151,7 +64,7 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
 
     # objective function
 
-    feedstock_cost = sum(m.biomass_used[b, r, l] * cost.loc[b, l] for b in m.SOURCE for r in m.ROUTE for l in m.LOCATION)
+    feedstock_cost = sum(m.biomass_used[b, r, l] * cost.loc[l, b] for b in m.SOURCE for r in m.ROUTE for l in m.LOCATION)
     feedstock_transport_cost = sum(m.biomass_sold[b, l1, l2] * price_per_km_ton * distance.loc[l1, l2]
                                 for b in m.SOURCE for l1 in m.LOCATION for l2 in m.LOCATION)
     product_transport_cost = sum(m.urea_sold[l1, l2] * price_per_km_ton * distance.loc[l1, l2]
@@ -192,7 +105,7 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
     @m.Constraint(m.ROUTE, m.LOCATION)
     def biomass_to_urea_ratio(m, r, l):
         # return m.urea_produced[r, l] == sum(m.biomass_used[b, r, l] * conversion.loc[b, r] for b in m.SOURCE)
-        return m.urea_produced[r, l] == sum(m.biomass_used[b, r, l] * 0.81 for b in m.SOURCE)
+        return m.urea_produced[r, l] == sum(m.biomass_used[b, r, l] * conversion.loc[b, r]  for b in m.SOURCE)
 
     # 6 - biomass used must be equal to the total biomass sold from all locations
     @m.Constraint(m.SOURCE, m.LOCATION)
@@ -202,7 +115,7 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
     # total biomass sold from a location must be lower than supply
     @m.Constraint(m.SOURCE, m.LOCATION)
     def biomass_supply_limit(m, b, l):
-        return sum(m.biomass_sold[b, l, l2] for l2 in m.LOCATION) <= supply.loc[b, l]
+        return sum(m.biomass_sold[b, l, l2] for l2 in m.LOCATION) <= supply.loc[l, b]
 
     # total urea sold to a location must be lower
 
@@ -311,14 +224,14 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
     #     return (m.capex <=
     #             772.35 + (m.capacity - 80)*8.5 + bigM*(1 - m.capex_y[4]))
 
-
+    print('Model building done! Initializing solver...')
 
 
     # model solving
     solver = pyo.SolverFactory('gurobi')
     solver.solve(m)
 
-
+    print(f'Model solving complete!')
     print(f'Total revenue = USD{urea_revenue(): ,.0f}')
     print(f'Total feedstock cost = USD{feedstock_cost(): ,.0f}')
     print(f'Total feedstock transport cost = USD{feedstock_transport_cost(): ,.0f}')
@@ -329,7 +242,7 @@ def solve_model(locations, sources, routes, supply, demand, conversion, cost, ur
 
     return m
 
-m = solve_model(locations, crops, routes, supply, demand, conversion, cost, urea_price, distance_matrix)
+m = solve_model(data, sources, routes, conversion, distance_matrix)
     # results conversion into useful formats
     # noinspection PyCallingNonCallable
 plant_installed = pd.Series(
@@ -348,3 +261,7 @@ biomass_sold = pd.DataFrame(
 urea_sold = pd.Series(
     {i: j for i, j in zip(m.LOCATION, [m.urea_sold[L, l2]() for l2 in m.LOCATION])}
 )
+
+biomass_used.to_pickle('data/results/biomass_used.p')
+biomass_sold.to_pickle('data/results/biomass_sold.p')
+urea_sold.to_pickle('data/results/urea_sold.p')
