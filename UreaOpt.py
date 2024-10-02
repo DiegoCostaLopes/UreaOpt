@@ -4,8 +4,8 @@ import pandas as pd
 import numpy as np
 import time
 
-
 start_time = time.time()
+
 # data organization
 
 sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
@@ -25,7 +25,6 @@ correspondence_series = pd.Series(data.index, index=data['location_id']).to_dict
 distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
 distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
-
 routes = ['Pure oxygen gasification',
           'Air mixed gasification', 
           'Electrolysis']
@@ -39,7 +38,6 @@ conversion = pd.DataFrame(conversion_data).set_index('source')
 def solve_model(data, sources, routes, conversion, distance):
 
     capex_ranges = [1, 2, 3, 4]
-
     locations = list(data.index)
     supply = data[sources]
     demand = data['urea_demand']
@@ -72,7 +70,6 @@ def solve_model(data, sources, routes, conversion, distance):
     m.capacity = pyo.Var(within=pyo.NonNegativeReals)                                       # installed capacity of the plant
     m.capex_y = pyo.Var(capex_ranges, within=pyo.Binary)                                    # binary variables for piecewise linearization of CAPEX
 
-
     # objective function
 
     feedstock_cost = sum(m.biomass_used[b, r, l] * cost.loc[l, b] for b in m.SOURCE for r in m.ROUTE for l in m.LOCATION)
@@ -86,7 +83,6 @@ def solve_model(data, sources, routes, conversion, distance):
     periods = list(range(1,21)) # 20 years
     discount_rate = 0.10
     NPV = sum(cash_flow / (1 + discount_rate)**t for t in periods) - m.capex*1000000
-
 
     m.objective = pyo.Objective(
         expr = NPV,
@@ -111,7 +107,6 @@ def solve_model(data, sources, routes, conversion, distance):
     @m.Constraint()
     def plant_location_limit(m):
         return sum(m.plant_installed[l] for l in m.LOCATION) == 1
-
 
     # 4 - if plant is not installed in the location, then production must be zero
     @m.Constraint(m.LOCATION)
@@ -140,10 +135,9 @@ def solve_model(data, sources, routes, conversion, distance):
     def urea_demand_limit(m, l):
         return sum(m.urea_sold[l1, l] for l1 in m.LOCATION) <= demand[l]
 
-
     # capex and capacity constraints
 
-    # # dummy constraint to fix capacity
+    # # dummy constraint to fix capacity if intended
     # @m.Constraint()
     # def urea_production_capacity_xxx(m):
     #     return m.capacity == 70
@@ -190,7 +184,6 @@ def solve_model(data, sources, routes, conversion, distance):
     def urea_production_capacity_7(m):
         return sum(m.capex_y[i] for i in capex_ranges) == 1
 
-
     # # 2 - capex is equal to its category if its binary variable is 1
 
     @m.Constraint()
@@ -229,20 +222,7 @@ def solve_model(data, sources, routes, conversion, distance):
         return (m.capex <=
                 502.89 + (m.capacity - 50)*8.98 + bigM*(1 - m.capex_y[4]))
 
-
-    # @m.Constraint()
-    # def urea_capex_41(m):
-    #     return (772.35 + (m.capacity - 80)*8.5 - bigM*(1 - m.capex_y[4]) 
-    #             <= m.capex)
-
-
-    # @m.Constraint()
-    # def urea_capex_42(m):
-    #     return (m.capex <=
-    #             772.35 + (m.capacity - 80)*8.5 + bigM*(1 - m.capex_y[4]))
-
     print('Model building done! Initializing solver...')
-
 
     # model solving
     solver = pyo.SolverFactory('gurobi')
@@ -261,37 +241,26 @@ def solve_model(data, sources, routes, conversion, distance):
     return m
 
 m = solve_model(data, sources, routes, conversion, distance_matrix)
-    # results conversion into useful formats
-    # noinspection PyCallingNonCallable
-plant_installed = pd.Series(
-    {i: j for i, j in zip(m.LOCATION, [m.plant_installed[l]() for l in m.LOCATION])}
-)
 
-L = plant_installed.index[plant_installed >= 0.999].to_list()
-
+# model solving complete. converting results into useful formats...
 
 plant_installed = pd.Series([m.plant_installed[l1]() for l1 in m.LOCATION],
                              name='plant_installed', index=locations)
+L = plant_installed.idxmax()
 biomass_used = pd.DataFrame([[m.biomass_used[b, r, L]() for b in m.SOURCE] for r in m.ROUTE],
                             index=routes, columns=sources)
 biomass_sold = pd.DataFrame([[m.biomass_sold[b, l1, L]() for b in m.SOURCE] for l1 in m.LOCATION],
                             index=locations, columns=[source+'_used' for source in sources])
 
-
 urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_sold', index=locations)
-
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
 file_name = 'state'
-
 export_model = True
 if export_model:
     data.to_pickle('data/results/main_results_' + file_name + '.p')
     biomass_used.to_pickle('data/results/biomass_used_'+ file_name +'.p')
 
-
 end_time = time.time()
 duration = (end_time - start_time) / 60
 print(f'Run complete! Time to solve: {duration} mins')
-
-# %%
