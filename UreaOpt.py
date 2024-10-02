@@ -19,7 +19,7 @@ data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
 # choosing which subset of data will I study.
-data = data.loc[(data['location_type'] == 'microregion')]
+data = data.loc[(data['location_type'] == 'state')]
 locations = list(data.index)
 correspondence_series = pd.Series(data.index, index=data['location_id']).to_dict()
 distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
@@ -83,9 +83,9 @@ def solve_model(data, sources, routes, conversion, distance):
     urea_revenue = sum(m.urea_sold[l1, l2] * urea_price[l2] for l1 in m.LOCATION for l2 in m.LOCATION)
 
     cash_flow = urea_revenue - feedstock_cost - feedstock_transport_cost - product_transport_cost
-    t = 20 # 20 years
+    periods = list(range(1,21)) # 20 years
     discount_rate = 0.10
-    NPV = cash_flow / (1 + discount_rate)**t - m.capex
+    NPV = sum(cash_flow / (1 + discount_rate)**t for t in periods) - m.capex*1000000
 
 
     m.objective = pyo.Objective(
@@ -282,7 +282,7 @@ urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_so
 
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
-file_name = 'microregions'
+file_name = 'state'
 
 export_model = True
 if export_model:
