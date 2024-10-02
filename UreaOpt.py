@@ -1,3 +1,4 @@
+
 import pyomo.environ as pyo
 import pandas as pd
 import numpy as np
@@ -10,19 +11,23 @@ start_time = time.time()
 sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
 sources_cost = [source + '_cost' for source in sources] 
 # full db has more data on area planted and etc. that the algorithm and
-#  the results dont necessarily need.
-columns = ['name', 'location_type', 'state', 'location_id', 'urea_demand', 'urea_price'] + sources + sources_cost
+# the results dont necessarily need.
+columns = (['name', 'location_type', 'region', 'state', 'location_id', 'urea_demand', 'urea_price']
+            + sources + sources_cost)
 
 data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
 # choosing which subset of data will I study.
-data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
+data = data.loc[(data['location_type'] == 'microregion')]
 locations = list(data.index)
+correspondence_series = pd.Series(data.index, index=data['location_id']).to_dict()
+distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
 distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
+
 routes = ['Pure oxygen gasification',
-          'Air mixed gasification',
+          'Air mixed gasification', 
           'Electrolysis']
 
 conversion_data = {'source': sources,
@@ -77,14 +82,20 @@ def solve_model(data, sources, routes, conversion, distance):
                                 for l1 in m.LOCATION for l2 in m.LOCATION)
     urea_revenue = sum(m.urea_sold[l1, l2] * urea_price[l2] for l1 in m.LOCATION for l2 in m.LOCATION)
 
+    cash_flow = urea_revenue - feedstock_cost - feedstock_transport_cost - product_transport_cost
+    t = 20 # 20 years
+    discount_rate = 0.10
+    NPV = cash_flow / (1 + discount_rate)**t - m.capex
+
+
     m.objective = pyo.Objective(
-        expr = urea_revenue - feedstock_cost - feedstock_transport_cost - product_transport_cost,
+        expr = NPV,
         sense = pyo.maximize,
     )
 
     # constraints
 
-    # 1 - total urea produced must be equal to 35 t/h
+    # 1 - total urea produced must be equal to its capacity
     @m.Constraint()
     def total_urea_produced(m):
         return sum(m.urea_produced[r, l] for r in m.ROUTE for l in m.LOCATION) == m.capacity * yearly_hours
@@ -132,10 +143,10 @@ def solve_model(data, sources, routes, conversion, distance):
 
     # capex and capacity constraints
 
-    #xxx capacity is 35
-    @m.Constraint()
-    def urea_production_capacity_xxx(m):
-        return m.capacity == 70
+    # # dummy constraint to fix capacity
+    # @m.Constraint()
+    # def urea_production_capacity_xxx(m):
+    #     return m.capacity == 70
 
     # 1 - if capacity is between 0 and x t/h, then its binary variable is 1
     @m.Constraint()
@@ -238,13 +249,14 @@ def solve_model(data, sources, routes, conversion, distance):
     solver.solve(m)
 
     print(f'Model solving complete!')
+    print(f'Plant capacity: {m.capacity()} t/h')
     print(f'Total revenue = USD{urea_revenue(): ,.0f}')
     print(f'Total feedstock cost = USD{feedstock_cost(): ,.0f}')
     print(f'Total feedstock transport cost = USD{feedstock_transport_cost(): ,.0f}')
     print(f'Total product transport cost = USD{product_transport_cost(): ,.0f}')
-
-    print(f'binary capex array = {[m.capex_y[y]() for y in capex_ranges]}')
-    print(f'capex = {m.capex()}')
+    print(f'Net cash flow = USD{cash_flow(): ,.0f}')
+    print(f'Plant CAPEX = {m.capex()}')
+    print(f'NPV = USD {NPV(): ,.0f}')    
 
     return m
 
@@ -267,22 +279,16 @@ biomass_sold = pd.DataFrame([[m.biomass_sold[b, l1, L]() for b in m.SOURCE] for 
 
 
 urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_sold', index=locations)
-#%%
+
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
-# biomass_used = pd.DataFrame(
-#     {r:      {b: k for b, k in zip(m.SOURCE, [m.biomass_used[b, r, L]() for b in m.SOURCE])} for r in m.ROUTE}
-# )
-# biomass_sold = pd.DataFrame(
-#     {l1:     {b: k for b, k in zip(m.SOURCE, [m.biomass_sold[b, l1, L]() for b in m.SOURCE])} for l1 in m.LOCATION}
-# )
+file_name = 'microregions'
 
-# urea_sold = pd.Series(
-#     {i: j for i, j in zip(m.LOCATION, [m.urea_sold[L, l2]() for l2 in m.LOCATION])}
-# )
+export_model = True
+if export_model:
+    data.to_pickle('data/results/main_results_' + file_name + '.p')
+    biomass_used.to_pickle('data/results/biomass_used_'+ file_name +'.p')
 
-data.to_pickle('data/results/main_results.p')
-biomass_used.to_pickle('data/results/biomass_used.p')
 
 end_time = time.time()
 duration = (end_time - start_time) / 60
