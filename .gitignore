@@ -4,5 +4,6 @@
 # adding the distance matrix to the gitignore for size reasons
 data/raw/distance_matrix/matriz_distancias.csv
 data/processed/distance_matrix.csv
+data/processed/distance_matrix.p
 
 .~lock*
