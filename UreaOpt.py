@@ -8,12 +8,12 @@ start_time = time.time()
 
 # data organization
 
-sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse']
-sources_cost = [source + '_cost' for source in sources] 
+sources = ['rice_husk', 'coffee_husk', 'corn_stover', 'soy_straw', 'sugarcane_straw', 'sugarcane_bagasse', 'power_grid']
+sources_price = [source + '_price' for source in sources] 
 # full db has more data on area planted and etc. that the algorithm and
 # the results dont necessarily need.
 columns = (['name', 'location_type', 'region', 'state', 'location_id', 'urea_demand', 'urea_price']
-            + sources + sources_cost)
+            + sources + sources_price)
 
 data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
@@ -21,7 +21,7 @@ distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 # choosing which subset of data will I study.
 data = data.loc[(data['location_type'] == 'state')]
 locations = list(data.index)
-correspondence_series = pd.Series(data.index, index=data['location_id']).to_dict()
+correspondence_series = pd.Series(data.index, index=data['location_id'])
 distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
 distance_matrix = distance_matrix.loc[locations, locations] + 100 # correcting for transportation inside the same city
 
@@ -42,8 +42,8 @@ def solve_model(data, sources, routes, conversion, distance):
     supply = data[sources]
     demand = data['urea_demand']
     urea_price = data['urea_price']
-    cost = data[[source+'_cost' for source in sources]]
-    cost.columns = sources
+    prices = data[[source+'_price' for source in sources]]
+    prices.columns = sources
 
     # model definition
     m = pyo.ConcreteModel()
@@ -72,7 +72,7 @@ def solve_model(data, sources, routes, conversion, distance):
 
     # objective function
 
-    feedstock_cost = sum(m.biomass_used[b, r, l] * cost.loc[l, b] for b in m.SOURCE for r in m.ROUTE for l in m.LOCATION)
+    feedstock_cost = sum(m.biomass_used[b, r, l] * prices.loc[l, b] for b in m.SOURCE for r in m.ROUTE for l in m.LOCATION)
     feedstock_transport_cost = sum(m.biomass_sold[b, l1, l2] * price_per_km_ton * distance.loc[l1, l2]
                                 for b in m.SOURCE for l1 in m.LOCATION for l2 in m.LOCATION)
     product_transport_cost = sum(m.urea_sold[l1, l2] * price_per_km_ton * distance.loc[l1, l2]
@@ -156,6 +156,17 @@ def solve_model(data, sources, routes, conversion, distance):
         return 20 - bigM*(1 - m.capex_y[2]) <= m.capacity
 
     @m.Constraint()
+
+    # @m.Constraint()
+    # def urea_capex_41(m):
+    #     return (772.35 + (m.capacity - 80)*8.5 - bigM*(1 - m.capex_y[4]) 
+    #             <= m.capex)
+
+
+    # @m.Constraint()
+    # def urea_capex_42(m):
+    #     return (m.capex <=
+    #             772.35 + (m.capacity - 80)*8.5 + bigM*(1 - m.capex_y[4]))
     def urea_production_capacity_22(m):
         return m.capacity <= 35 + bigM*(1 - m.capex_y[2])
 
