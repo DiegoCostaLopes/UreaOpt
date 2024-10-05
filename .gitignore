@@ -5,5 +5,6 @@
 data/raw/distance_matrix/matriz_distancias.csv
 data/processed/distance_matrix.csv
 data/processed/distance_matrix.p
+data/raw/power/UCBT_PJ.csv
 
 .~lock*
