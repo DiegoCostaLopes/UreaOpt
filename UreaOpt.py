@@ -21,7 +21,9 @@ data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
 # choosing which subset of data will I study.
-data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
+# data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
+# data = data.loc[(data['location_type'] == 'microregion')]
+data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Centro-Oeste')]
 locations = list(data.index)
 correspondence_series = pd.Series(data.index, index=data['location_id'])
 distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
@@ -33,15 +35,15 @@ routes = ['Pure oxygen gasification',
 
 # biomass or power consumption that goes directly to urea in the form of feedstock
 conversion_data = {'source': biomass + ['power'],
-        'Pure oxygen gasification': [0.833 for b in biomass] + [0.0],
-        'Air mixed gasification': [0.81 for b in biomass] + [0.0],
+        'Pure oxygen gasification': [0.7616, 0.7616, 0.7616, 0.7616, 0.7616, 0.571209] + [0.0],
+        'Air mixed gasification': [0.727710224774961, 0.727710224774961, 0.727710224774961, 0.727710224774961, 0.727710224774961, 0.545782163392111] + [0.0],
         'Electrolysis': [0.00 for b in biomass] + [0.00]}
 conversion = pd.DataFrame(conversion_data).set_index('source')
 
 # biomass or power that goes to utility (in the form of steam or power)
 utility_data = {'source': biomass + ['power'],
-        'Pure oxygen gasification': [0.33 for b in biomass] + [0.0],
-        'Air mixed gasification': [0.33 for b in biomass] + [0.0],
+        'Pure oxygen gasification': [0.294430367536132, 0.294430367536132, 0.294430367536132, 0.294430367536132, 0.294430367536132, 0.326134953063215] + [0.0],
+        'Air mixed gasification': [0.250124450940096, 0.250124450940096, 0.250124450940096, 0.250124450940096, 0.250124450940096, 0.277058126680156] + [0.0],
         'Electrolysis': [0.00 for b in biomass] + [0.00]}
 utility = pd.DataFrame(utility_data).set_index('source')
 
@@ -93,21 +95,22 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
 
     # objective function
 
-    biomass_cost = (sum(m.biomass_sold[b, l1, l2] * prices.loc[l1 , b] for b in m.BIOMASS for l1 in m.LOCATION for l2 in m.LOCATION))
-    power_cost = sum(m.power_sold[p, l] * prices.loc[l, p] for p in m.POWER for l in m.LOCATION)
-    biomass_transport_cost = sum(m.biomass_sold[b, l1, l2] * price_per_km_ton * distance.loc[l1, l2]
+    
+    m.biomass_cost = (sum(m.biomass_sold[b, l1, l2] * prices.loc[l1 , b] for b in m.BIOMASS for l1 in m.LOCATION for l2 in m.LOCATION))
+    m.power_cost = sum(m.power_sold[p, l] * prices.loc[l, p] for p in m.POWER for l in m.LOCATION)
+    m.biomass_transport_cost = sum(m.biomass_sold[b, l1, l2] * price_per_km_ton * distance.loc[l1, l2]
                                 for b in m.BIOMASS for l1 in m.LOCATION for l2 in m.LOCATION)
-    product_transport_cost = sum(m.urea_sold[l1, l2] * price_per_km_ton * distance.loc[l1, l2]
+    m.product_transport_cost = sum(m.urea_sold[l1, l2] * price_per_km_ton * distance.loc[l1, l2]
                                 for l1 in m.LOCATION for l2 in m.LOCATION)
-    urea_revenue = sum(m.urea_sold[l1, l2] * urea_price[l2] for l1 in m.LOCATION for l2 in m.LOCATION)
+    m.urea_revenue = sum(m.urea_sold[l1, l2] * urea_price[l2] for l1 in m.LOCATION for l2 in m.LOCATION)
 
-    cash_flow = urea_revenue - biomass_cost - power_cost - biomass_transport_cost - product_transport_cost
+    m.cash_flow = m.urea_revenue - m.biomass_cost - m.power_cost - m.biomass_transport_cost - m.product_transport_cost
     periods = list(range(1,21)) # 20 years
     discount_rate = 0.10
-    NPV = sum(cash_flow / (1 + discount_rate)**t for t in periods) - m.capex*1000000
+    m.NPV = sum(m.cash_flow / (1 + discount_rate)**t for t in periods) - m.capex*1000000
 
     m.objective = pyo.Objective(
-        expr = NPV,
+        expr = m.NPV,
         sense = pyo.maximize,
     )
 
@@ -135,28 +138,28 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
     def plant_production_limit(m, l):
         return sum(m.urea_produced[r, l] for r in m.ROUTE) <= bigM * 8300 * m.plant_installed[l]
 
-    # 5 - relationship between biomass consumed and urea produced
+    # 5 - relationship between energy source consumed and urea produced
     @m.Constraint(m.ROUTE, m.LOCATION)
     def biomass_to_urea_ratio(m, r, l):
         # return m.urea_produced[r, l] == sum(m.biomass_used[b, r, l] * conversion.loc[b, r] for b in m.SOURCE)
         return m.urea_produced[r, l] == sum(m.energy_source_used[s, r, l] * conversion.loc[s, r] for s in m.SOURCE)
   
-  
+    # 6 - relationship between utility used and energy source consumed
     @m.Constraint(m.ROUTE, m.LOCATION)
     def utility_to_urea_ratio(m, r, l):
         return m.utility_used[r, l] == sum(m.energy_source_used[s, r, l]  * utility.loc[s, r] for s in m.SOURCE)
 
-    # 6 - biomass used must be equal to the total biomass sold from all locations
+    # 7 - biomass used must be equal to the total biomass sold from all locations
     @m.Constraint(m.BIOMASS, m.LOCATION)
     def biomass_sold_to(m, b, l):
         return sum(m.energy_source_used[b, r, l] for r in m.ROUTE) == sum(m.biomass_sold[b, l1, l] for l1 in m.LOCATION)
     
-        # 6 - biomass used must be equal to the total biomass sold from all locations
+    # 8 - power used must be equal to the total biomass sold from all locations
     @m.Constraint(m.LOCATION)
     def power_sold_to(m, l):
         return sum(m.energy_source_used['power', r, l] + m.utility_used[r, l]  for r in m.ROUTE) == sum(m.power_sold[p, l] for p in m.POWER)
 
-    # total biomass sold from a location must be lower than supply
+    # 9 - total biomass sold from a location must be lower than supply
     @m.Constraint(m.BIOMASS, m.LOCATION)
     def biomass_supply_limit(m, b, l):
         return sum(m.biomass_sold[b, l, l2] for l2 in m.LOCATION) <= supply.loc[l, b]
@@ -254,24 +257,21 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
     # model solving
     solver = pyo.SolverFactory('gurobi')
     solver.solve(m)
-
     print(f'Model solving complete!')
-    print(f'Plant capacity: {m.capacity()} t/h')
-    print(f'Total revenue = USD{urea_revenue(): ,.0f}')
-    print(f'Total biomass cost = USD{biomass_cost(): ,.0f}')
-    print(f'Total power cost = USD{power_cost(): ,.0f}')
-    print(f'Total biomass transport cost = USD{biomass_transport_cost(): ,.0f}')
-    print(f'Total product transport cost = USD{product_transport_cost(): ,.0f}')
-    print(f'Net cash flow = USD{cash_flow(): ,.0f}')
-    print(f'NPV = USD {NPV(): ,.0f}')    
-    print(f'Plant CAPEX = {m.capex()}')
-
-
     return m
 
 m = solve_model(data, biomass, power, routes, conversion, utility, distance_matrix)
 
 # model solving complete. converting results into useful formats...
+print(f'Plant capacity: {m.capacity()} t/h')
+print(f'Total revenue = USD{m.urea_revenue(): ,.0f}')
+print(f'Total biomass cost = USD{m.biomass_cost(): ,.0f}')
+print(f'Total power cost = USD{m.power_cost(): ,.0f}')
+print(f'Total biomass transport cost = USD{m.biomass_transport_cost(): ,.0f}')
+print(f'Total product transport cost = USD{m.product_transport_cost(): ,.0f}')
+print(f'Net cash flow = USD{m.cash_flow(): ,.0f}')
+print(f'NPV = USD {m.NPV(): ,.0f}')    
+print(f'Plant CAPEX = {m.capex()}')
 
 plant_installed = pd.Series([m.plant_installed[l1]() for l1 in m.LOCATION],
                              name='plant_installed', index=locations)
@@ -289,11 +289,11 @@ urea_produced = pd.DataFrame([[m.urea_produced[r, l]() for r in m.ROUTE] for l i
 urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_sold', index=locations)
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
-file_name = 'SP'
+file_name = 'microregion_CO'
 export_model = True
 if export_model:
     data.to_pickle('data/results/main_results_' + file_name + '.p')
-    # biomass_used.to_pickle('data/results/biomass_used_'+ file_name +'.p')
+    energy_source_used.to_pickle('data/results/energy_source_used_'+ file_name +'.p')
 
 end_time = time.time()
 duration = (end_time - start_time) / 60
