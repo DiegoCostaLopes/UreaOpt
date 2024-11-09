@@ -290,7 +290,7 @@ urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_so
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
 file_name = 'microregion_CO'
-export_model = True
+export_model = False
 if export_model:
     data.to_pickle('data/results/main_results_' + file_name + '.p')
     energy_source_used.to_pickle('data/results/energy_source_used_'+ file_name +'.p')

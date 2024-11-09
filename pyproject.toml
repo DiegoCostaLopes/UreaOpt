@@ -1,25 +1,15 @@
-[tool.poetry]
+[project]
 name = "ureaopt"
 version = "0.1.0"
-description = ""
-authors = ["HeathenHeart <diego.lopes@outlook.com>"]
+description = "Urea Production Optimization"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-numpy = "^2.1.1"
-scipy = "^1.14.1"
-pyomo = "^6.8.0"
-pandas = "^2.2.3"
-openpyxl = "^3.1.5"
-highspy = "^1.7.2"
-unidecode = "^1.3.8"
-pyarrow = "^17.0.0"
-
-
-[tool.poetry.group.dev.dependencies]
-ipykernel = "^6.29.5"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "numpy>=2.1.3",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.3",
+    "pyomo>=6.8.0",
+    "scipy>=1.14.1",
+    "unidecode>=1.3.8",
+]
