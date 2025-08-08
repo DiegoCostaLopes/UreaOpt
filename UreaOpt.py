@@ -16,14 +16,35 @@ sources_price = [source + '_price' for source in sources]
 # the results dont necessarily need.
 columns = (['name', 'location_type', 'region', 'state', 'location_id', 'urea_demand', 'urea_price']
             + sources + sources_price)
-
 data = pd.read_pickle('data/processed/location_db.p').loc[:, columns]
 distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
+file_name = 'microregion_corn_stover'
+folder = 'data/results_new/'
+export_model = True
 # choosing which subset of data will I study.
-# data = data.loc[(data['location_type'] == 'city') & (data['state'] == 'Sao Paulo')]
+# run 1 - full country
+data = data.loc[(data['location_type'] == 'microregion')]
+
+# run 2 - specific region runs
+# data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Sudeste')]
+# data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Sul')]
+# data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Centro-Oeste')]
+# data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Nordeste')]
+# data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Norte')]
+
+# run 3 - lower urea demand
 # data = data.loc[(data['location_type'] == 'microregion')]
-data = data.loc[(data['location_type'] == 'microregion') & (data['region'] == 'Centro-Oeste')]
+# data.loc[:, 'urea_demand'] = data.loc[:, 'urea_demand']*0.25
+
+# run 4 - artificially limiting the biomass to one type
+chosen_biomass = 'corn_stover'
+for bio in biomass:
+    if bio is not chosen_biomass:
+        data.loc[:, bio] = 0
+        print(data[bio].sum())
+
+
 locations = list(data.index)
 correspondence_series = pd.Series(data.index, index=data['location_id'])
 distance_matrix = distance_matrix.rename(index=correspondence_series, columns=correspondence_series)
@@ -35,15 +56,15 @@ routes = ['Pure oxygen gasification',
 
 # biomass or power consumption that goes directly to urea in the form of feedstock
 conversion_data = {'source': biomass + ['power'],
-        'Pure oxygen gasification': [0.7616, 0.7616, 0.7616, 0.7616, 0.7616, 0.571209] + [0.0],
-        'Air mixed gasification': [0.727710224774961, 0.727710224774961, 0.727710224774961, 0.727710224774961, 0.727710224774961, 0.545782163392111] + [0.0],
+        'Pure oxygen gasification': [0.6499, 0.7241, 0.8054, 0.7026, 0.6619, 0.5559] + [0.0],
+        'Air mixed gasification': [0.6273, 0.6961, 0.7733, 0.7331, 0.6331, 0.5322] + [0.0],
         'Electrolysis': [0.00 for b in biomass] + [0.00]}
 conversion = pd.DataFrame(conversion_data).set_index('source')
 
 # biomass or power that goes to utility (in the form of steam or power)
 utility_data = {'source': biomass + ['power'],
-        'Pure oxygen gasification': [0.294430367536132, 0.294430367536132, 0.294430367536132, 0.294430367536132, 0.294430367536132, 0.326134953063215] + [0.0],
-        'Air mixed gasification': [0.250124450940096, 0.250124450940096, 0.250124450940096, 0.250124450940096, 0.250124450940096, 0.277058126680156] + [0.0],
+        'Pure oxygen gasification': [0.19699, 0.26823, 0.26751, 0.28332, 0.175137, 0.18598] + [0.0],
+        'Air mixed gasification': [0.15653, 0.22381, 0.21383, 0.24256, 0.13060, 0.15243] + [0.0],
         'Electrolysis': [0.00 for b in biomass] + [0.00]}
 utility = pd.DataFrame(utility_data).set_index('source')
 
@@ -70,7 +91,7 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
     m.ROUTE = pyo.Set(initialize=routes)
 
     # model parameters
-    yearly_hours = 8300
+    yearly_hours = 8585
     bigM = 10000
     transport_price = 6.36 / 5.5 * 2# average price per km
     truck_capacity = 40 # tons per truck, bi-train truck
@@ -103,16 +124,24 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
     m.product_transport_cost = sum(m.urea_sold[l1, l2] * price_per_km_ton * distance.loc[l1, l2]
                                 for l1 in m.LOCATION for l2 in m.LOCATION)
     m.urea_revenue = sum(m.urea_sold[l1, l2] * urea_price[l2] for l1 in m.LOCATION for l2 in m.LOCATION)
-
-    m.cash_flow = m.urea_revenue - m.biomass_cost - m.power_cost - m.biomass_transport_cost - m.product_transport_cost
+    m.fixed_costs = m.capex * 1e6 * 0.04
+    m.total_costs = m.biomass_cost + m.power_cost + m.biomass_transport_cost + m.product_transport_cost + m.fixed_costs
+    # m.cash_flow = m.urea_revenue - m.biomass_cost - m.power_cost - m.biomass_transport_cost - m.product_transport_cost
+    m.cash_flow = m.urea_revenue - m.total_costs
     periods = list(range(1,21)) # 20 years
     discount_rate = 0.10
     m.NPV = sum(m.cash_flow / (1 + discount_rate)**t for t in periods) - m.capex*1000000
+    m.LCOU = (m.capex*1e6 + sum((m.total_costs) / (1 + discount_rate)**t for t in periods)) / ( sum(m.capacity*8585 / (1 + discount_rate)**t for t in periods)) 
 
     m.objective = pyo.Objective(
         expr = m.NPV,
         sense = pyo.maximize,
     )
+    # m.objective = pyo.Objective(
+    #     expr = m.LCOU,
+    #     sense = pyo.minimize,
+    # )
+
 
     # constraints
 
@@ -256,22 +285,26 @@ def solve_model(data, biomass, power, routes, conversion, utility, distance):
 
     # model solving
     solver = pyo.SolverFactory('gurobi')
-    solver.solve(m)
+    solver.solve(m, tee = True)
     print(f'Model solving complete!')
     return m
 
 m = solve_model(data, biomass, power, routes, conversion, utility, distance_matrix)
 
 # model solving complete. converting results into useful formats...
-print(f'Plant capacity: {m.capacity()} t/h')
-print(f'Total revenue = USD{m.urea_revenue(): ,.0f}')
-print(f'Total biomass cost = USD{m.biomass_cost(): ,.0f}')
-print(f'Total power cost = USD{m.power_cost(): ,.0f}')
-print(f'Total biomass transport cost = USD{m.biomass_transport_cost(): ,.0f}')
-print(f'Total product transport cost = USD{m.product_transport_cost(): ,.0f}')
-print(f'Net cash flow = USD{m.cash_flow(): ,.0f}')
-print(f'NPV = USD {m.NPV(): ,.0f}')    
-print(f'Plant CAPEX = {m.capex()}')
+print(f'Plant capacity: {m.capacity(): ,.1f}')
+print(f'Total revenue: {m.urea_revenue()/1e6: ,.2f}')
+print(f'Total biomass cost:{m.biomass_cost()/1e6: ,.2f}')
+print(f'Total power cost:{m.power_cost()/1e6: ,.2f}')
+print(f'Total biomass transport cost: {m.biomass_transport_cost()/1e6: ,.2f}')
+print(f'Total product transport cost: {m.product_transport_cost()/1e6: ,.2f}')
+print(f'Fixed costs: {m.fixed_costs()/1e6: ,.2f}')
+print(f'Total costs: {m.total_costs()/1e6: ,.2f}')
+print(f'Net cash flow: {m.cash_flow()/1e6: ,.2f}')
+print(f'NPV: {m.NPV()/1e6: ,.2f}')    
+print(f'LCOU: {m.LCOU(): ,.1f}')    
+
+print(f'Plant CAPEX: {m.capex()}')
 
 plant_installed = pd.Series([m.plant_installed[l1]() for l1 in m.LOCATION],
                              name='plant_installed', index=locations)
@@ -289,12 +322,12 @@ urea_produced = pd.DataFrame([[m.urea_produced[r, l]() for r in m.ROUTE] for l i
 urea_sold = pd.Series([m.urea_sold[L, l2]() for l2 in m.LOCATION], name='urea_sold', index=locations)
 data = pd.concat([data, plant_installed, biomass_sold, urea_sold], axis=1)
 
-file_name = 'microregion_CO'
-export_model = False
+
 if export_model:
-    data.to_pickle('data/results/main_results_' + file_name + '.p')
-    energy_source_used.to_pickle('data/results/energy_source_used_'+ file_name +'.p')
+    data.to_pickle(folder + 'main_results_' + file_name + '.p')
+    energy_source_used.to_pickle(folder + 'energy_source_used_'+ file_name +'.p')
 
 end_time = time.time()
 duration = (end_time - start_time) / 60
+
 print(f'Run complete! Time to solve: {duration} mins')
