@@ -21,7 +21,7 @@ distance_matrix = pd.read_pickle('data/processed/distance_matrix.p')
 
 file_name = 'microregion_corn_stover'
 folder = 'data/results_new/'
-export_model = True
+export_model = False
 # choosing which subset of data will I study.
 # run 1 - full country
 data = data.loc[(data['location_type'] == 'microregion')]
@@ -38,11 +38,11 @@ data = data.loc[(data['location_type'] == 'microregion')]
 # data.loc[:, 'urea_demand'] = data.loc[:, 'urea_demand']*0.25
 
 # run 4 - artificially limiting the biomass to one type
-chosen_biomass = 'corn_stover'
-for bio in biomass:
-    if bio is not chosen_biomass:
-        data.loc[:, bio] = 0
-        print(data[bio].sum())
+# chosen_biomass = 'corn_stover'
+# for bio in biomass:
+#     if bio is not chosen_biomass:
+#         data.loc[:, bio] = 0
+#         print(data[bio].sum())
 
 
 locations = list(data.index)
